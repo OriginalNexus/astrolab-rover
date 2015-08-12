@@ -1,17 +1,17 @@
-// Enter this in vim to configure make
-// map <F9> :!ssh 192.168.1.12 "cd ~/Github/astrolab-rover/raspberry-pi/ && make"<CR>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <signal.h>
+#include <string.h>
 #include <wiringPi.h>
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
+
+#define TCP_IMPLEMENTATION
+#include "../shared/tcp.h"
 
 #define true 1
 #define false 0
 
-#define PORT 1337
+#define PORT 7854
 
 
 typedef struct {
@@ -23,14 +23,11 @@ typedef struct {
 // Motors
 motor motor_L, motor_R;
 
-// Server variables
-int mSockDesc = -1, sockDesc = -1;
-struct sockaddr_in server_addr, client_addr;
-
 // Error function
 void error(char * msg) {
 	fprintf(stderr, "###################\n## A fuck was given (i.e. error):\n## ");
 	perror(msg);
+	fprintf(stderr, "###################\n");
 	exit(1);
 }
 
@@ -61,6 +58,20 @@ void setMotor(motor * m, int speed) {
 	m->speed = speed;
 }
 
+void finish() {
+	// Stop motors
+	setMotor(&motor_L, 0);
+	setMotor(&motor_R, 0);
+
+	tcp_CloseServer();
+
+	exit(0);
+}	
+
+void onSIGTERM(int sig, siginfo_t *siginfo, void *context) {
+	finish();
+}
+
 void init() {
 	// Setting up pins
 	wiringPiSetup();
@@ -73,24 +84,18 @@ void init() {
 	motor_L = newMotor(0, 1);
 	motor_R = newMotor(2, 3);
 
-	// Setup server
-	// Open socket
-	mSockDesc = socket(AF_INET, SOCK_STREAM, 0);
-	if (mSockDesc < 0)
-		  error("Failed to open socket");
-
-	// Create server address
-	server_addr.sin_family = AF_INET;
-	server_addr.sin_addr.s_addr = INADDR_ANY;
-   	server_addr.sin_port = htons(PORT);
-
-	// Bind the address to the socket
-	if (bind(mSockDesc, (struct sockaddr *) &server_addr, sizeof(server_addr)) < 0)
-		error("Binding failed");
+	// Handle SIGTERM
+	struct sigaction sigAction;
+	memset (&sigAction, '\0', sizeof(sigAction));
+	sigAction.sa_flags = SA_SIGINFO;
+	sigAction.sa_sigaction = &onSIGTERM;
+	if (sigaction(SIGTERM, &sigAction, NULL) < 0)
+		error("Function sigaction(SIGTERM) failed");
+	if (sigaction(SIGINT, &sigAction, NULL) < 0)
+		error("Function sigaction(SIGINT) failed");
 }
 
 void testMotors() {
-	// Test motors
 	printf("Testing motors...\n");
 	printf("Forward");
 	setMotor(&motor_L, 1);
@@ -119,25 +124,10 @@ int main(int argc, char * argv[]) {
 	printf("=======================================\n");
 
 	init();
+
+	tcp_ConnectToClient(PORT);
+	tcp_CloseServer();
 	
-	testMotors();
-
-	// Listen for client
-	printf("Listening on port %d...\n", PORT);
-	listen(mSockDesc, 5);
-
-	// Accept client
-	socklen_t clientLen = sizeof(client_addr);
-	sockDesc = accept(mSockDesc, (struct sockaddr *) &client_addr, &clientLen);
-	if (sockDesc < 0) 
-		error("Error accepting client");
-	printf("Connected to client %d on port %d.\n", ntohs(client_addr.sin_addr.s_addr), PORT);
-
-	// Close sockets
-	close(sockDesc);
-	close(mSockDesc);
-
-	// Terminate program
 	return 0;
 }
 
