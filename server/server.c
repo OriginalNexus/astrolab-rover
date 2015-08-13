@@ -1,6 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
+#include <unistd.h> // sleep()
 #include <signal.h>
 #include <string.h>
 #include <wiringPi.h>
@@ -11,8 +11,6 @@
 #define true 1
 #define false 0
 
-#define PORT 7854
-
 
 typedef struct {
 	int pin1;
@@ -20,14 +18,21 @@ typedef struct {
 	int speed;
 }motor;
 
+// Port used
+int port = 0;
+
 // Motors
 motor motor_L, motor_R;
 
 // Error function
-void error(char * msg) {
-	fprintf(stderr, "###################\n## A fuck was given (i.e. error):\n## ");
+void m_perror(char * msg) {
+	fprintf(stderr, "### Server Error: ");
 	perror(msg);
-	fprintf(stderr, "###################\n");
+	exit(1);
+}
+
+void m_error(char * msg) {
+	fprintf(stderr, "### Server Error: %s\n", msg);
 	exit(1);
 }
 
@@ -45,7 +50,7 @@ motor newMotor(int pin1, int pin2) {
 void setMotor(motor * m, int speed) {
 	if (speed > 0) {
 		digitalWrite(m->pin1, HIGH);
-		digitalWrite(m->pin2, LOW);	
+		digitalWrite(m->pin2, LOW);
 	}
 	else if (speed < 0) {
 		digitalWrite(m->pin1, LOW);
@@ -66,9 +71,9 @@ void finish() {
 	tcp_CloseServer();
 
 	exit(0);
-}	
+}
 
-void onSIGTERM(int sig, siginfo_t *siginfo, void *context) {
+void termHandler(int sig) {
 	finish();
 }
 
@@ -84,15 +89,27 @@ void init() {
 	motor_L = newMotor(0, 1);
 	motor_R = newMotor(2, 3);
 
-	// Handle SIGTERM
+	// Set TCP log level
+	tcp_SetLogLevel(2);
+
+	// Get port
+	FILE * fp = fopen("../shared/port", "rt");
+	if (fp == NULL) {
+		m_error("Failed to open ../shared/port");
+	}
+	if (fscanf(fp, "%d", &port) < 1) {
+		m_error("Failed to read port from file ../shared/port");
+	}
+	fclose(fp);
+
+	// Handle SIGTERM and SIGINT
 	struct sigaction sigAction;
 	memset (&sigAction, '\0', sizeof(sigAction));
-	sigAction.sa_flags = SA_SIGINFO;
-	sigAction.sa_sigaction = &onSIGTERM;
+	sigAction.sa_handler = &termHandler;
 	if (sigaction(SIGTERM, &sigAction, NULL) < 0)
-		error("Function sigaction(SIGTERM) failed");
+		m_perror("Function sigaction(SIGTERM) failed");
 	if (sigaction(SIGINT, &sigAction, NULL) < 0)
-		error("Function sigaction(SIGINT) failed");
+		m_perror("Function sigaction(SIGINT) failed");
 }
 
 void testMotors() {
@@ -125,9 +142,15 @@ int main(int argc, char * argv[]) {
 
 	init();
 
-	tcp_ConnectToClient(PORT);
-	tcp_CloseServer();
-	
+	tcp_ConnectToClient(port);
+
+	char * req = (char *) malloc(256 * sizeof(char));
+	tcp_ReadFromClient(req, 255);
+	if (strcmp(req, "Sup server?") == 0) {
+		tcp_WriteToClient("Nothing new.");
+	}
+
+	finish();
+
 	return 0;
 }
-

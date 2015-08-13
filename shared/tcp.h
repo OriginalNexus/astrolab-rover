@@ -4,53 +4,85 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <string.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netdb.h>
 
-#define true 1
-#define false 0
+// Creates a new server and listens on the port specified until a client connects.
+// Returns 0 on success, -1 on fail.
+int tcp_ConnectToClient(int port);
 
-// This function creates a new server and listens on the port specified until a client connects
-// Any error will stop the program
-void tcp_ConnectToClient(int port);
+// Sends the message to the client.
+// Returns 0 on success, -1 on fail.
+int tcp_WriteToClient(char * msg);
 
-// Closes server socket
-void tcp_CloseServer();
+// Reads the message from the client.
+// Up to 'count' characters are read, 'msg' must be big enough to contain the message read and the null character.
+// Returns 0 on success, -1 on fail.
+int tcp_ReadFromClient(char * msg, int count);
 
-// Tries to connect to the specified server on the specified port
-// Returns 0 if the connection was successfull, -1 if not.
-// Any error will stop the program
+// Closes server sockets.
+// Returns 0 on success, -1 on fail.
+int tcp_CloseServer();
+
+
+// Connect to the specified server on the specified port.
+// Returns 0 on success, -1 on fail.
 int tcp_ConnectToServer(char * name, int port);
 
-// Closes client socket
-void tcp_CloseClient();
+// Sends the message to the server.
+// Returns 0 on success, -1 on fail.
+int tcp_WriteToServer(char * msg);
+
+// Reads the message from the server.
+// Up to 'count' characters are read, 'msg' must be big enough to contain the message read and the null character.
+// Returns 0 on success, -1 on fail.
+int tcp_ReadFromServer(char * msg, int count);
+
+// Closes client socket.
+// Returns 0 on success, -1 on fail.
+int tcp_CloseClient();
+
+
+// Set log level: 0 = no log; 1 = client/server dialog; 2 = client/server dialog + errors
+void tcp_SetLogLevel(int level);
 
 #ifdef TCP_IMPLEMENTATION
 
 static int tcpp_servSockDesc = -1, tcpp_servSockDescNew = -1;
 static int tcpp_cliSockDesc = -1;
+// 0 = no log; 1 = client/server dialog; 2 = client/server dialog + errors
+static int tcpp_logLev = 1;
 
-// Error function
-void tcpp_error(char * msg, int ignore) {
-	fprintf(stderr, "########## TCP ##########\n## A fuck was given (i.e. error):\n## ");
-	perror(msg);
-	fprintf(stderr, "#########################\n");
-	if (!ignore)
-		exit(1);
+// perror function. Always retruns -1
+int tcpp_perror(char * msg) {
+	if (tcpp_logLev >= 2) {
+		fprintf(stderr, "### TCP Error: ");
+		perror(msg);
+	}
+	return -1;
 }
 
-void tcp_ConnectToClient(int port) {
-	if (tcpp_servSockDescNew >= 0) return;
+// error function. Always retruns -1
+int tcpp_error(char * msg) {
+	if (tcpp_logLev >= 2) {
+		fprintf(stderr, "### TCP Error: %s\n", msg);
+	}
+	return -1;
+}
+
+int tcp_ConnectToClient(int port) {
+	if (tcpp_servSockDescNew >= 0) return tcpp_error("Already connected to a client. Close it first.");
 	// Open socket if needed
 	if (tcpp_servSockDesc < 0) {
 		tcpp_servSockDesc = socket(AF_INET, SOCK_STREAM, 0);
-		if (tcpp_servSockDesc < 0) 
-			tcpp_error("Failed to open socket", false);
+		if (tcpp_servSockDesc < 0)
+			return tcpp_perror("Failed to open socket");
 		int enable = 1;
 		if (setsockopt(tcpp_servSockDesc, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int)) < 0)
-			tcpp_error("Function setsockopt(SO_REUSEADDR) failed", false);
+			return tcpp_perror("Failed to setsockopt(SO_REUSEADDR)");
 	}
 
 	// Create server address
@@ -61,43 +93,87 @@ void tcp_ConnectToClient(int port) {
 
 	// Bind the address to the socket
 	if (bind(tcpp_servSockDesc, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0)
-		tcpp_error("Binding failed", false);
+		return tcpp_perror("Failed to bind");
 
 	// Listen for client
+	if (listen(tcpp_servSockDesc, 5) < 0)
+		return tcpp_perror("Failed to listen");
 	printf("Listening on port %d...\n", port);
-	listen(tcpp_servSockDesc, 5);
 
 	// Accept clients
 	struct sockaddr_in cli_addr;
 	socklen_t cliLen = sizeof(cli_addr);
 	while (1) {
 		tcpp_servSockDescNew = accept(tcpp_servSockDesc, (struct sockaddr *) &cli_addr, &cliLen);
-		if (tcpp_servSockDescNew < 0) 
-			tcpp_error("Error accepting client", true);
+		if (tcpp_servSockDescNew < 0)
+			tcpp_perror("Error accepting client");
 		else
 			break;
 	}
 
 	printf("Connected to client.\n");
+
+	return 0;
 }
 
-void tcp_CloseServer() {
+int tcp_WriteToClient(char * msg) {
+	if (tcpp_servSockDescNew < 0) {
+		return tcpp_error("Not connected to a client. Connect first.");
+	}
+	if (strlen(msg) == 0) return tcpp_error("Message mustn't be empty");
+	int n = write(tcpp_servSockDescNew, msg, strlen(msg) * sizeof(char));
+	if (n < 0) {
+		return tcpp_perror("Failed to write to client");
+	}
+	else if (n < strlen(msg) * sizeof(char)) {
+		char * temp = (char *) malloc(256 * sizeof(char));
+		sprintf(temp, "Lost %d bytes when writting to client", strlen(msg) * sizeof(char) - n);
+		tcpp_error(temp);
+		free(temp);
+		return -1;
+	}
+	if (tcpp_logLev) printf("SERVER: %s\n", msg);
+	return 0;
+}
+
+int tcp_ReadFromClient(char * msg, int count) {
+	if (count <= 0) return tcpp_error("'count' must be greater than 0");
+	if (tcpp_servSockDescNew < 0) return tcpp_error("Not connected to a client. Connect first.");
+	int n = read(tcpp_servSockDescNew, msg, count * sizeof(char));
+	if (n < 0) {
+		return tcpp_perror("Failed to read from client");
+	}
+	else if (n == 0){
+		return tcpp_error("Nothing read from client");
+	}
+	msg[n / sizeof(char)] = '\0';
+	if (tcpp_logLev) printf("CLIENT: %s\n", msg);
+	return 0;
+}
+
+int tcp_CloseServer() {
 	if (tcpp_servSockDesc >= 0) {
-		close(tcpp_servSockDesc);
+		if (close(tcpp_servSockDesc) < 0) {
+			return tcpp_perror("Failed to close descriptor");
+		}
 		tcpp_servSockDesc = -1;
 	}
 	if (tcpp_servSockDescNew >= 0) {
-		close(tcpp_servSockDescNew);
+		if (close(tcpp_servSockDescNew) < 0) {
+			return tcpp_perror("Failed to close descriptor");
+		}
 		tcpp_servSockDescNew = -1;
 	}
+	return 0;
 }
+
 
 int tcp_ConnectToServer(char * name, int port) {
 	// Open socket if needed
 	if (tcpp_cliSockDesc < 0) {
 		tcpp_cliSockDesc = socket(AF_INET, SOCK_STREAM, 0);
 		if (tcpp_cliSockDesc < 0)
-			tcpp_error("Failed to open socket", false);
+			return tcpp_perror("Failed to open socket");
 	}
 
 	// Get server
@@ -105,10 +181,9 @@ int tcp_ConnectToServer(char * name, int port) {
 
 	host = gethostbyname(name);
 	if (host == NULL) {
-		printf("Host not found.\n");
-		return -1;
+		return tcpp_error("Host not found");
 	}
-	
+
 	// Create server address from host
 	struct sockaddr_in serv_addr;
 	serv_addr.sin_family = AF_INET;
@@ -117,18 +192,69 @@ int tcp_ConnectToServer(char * name, int port) {
 
 	// Connect to server
 	if (connect(tcpp_cliSockDesc, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0) {
-		tcpp_error("Could not connect to server", true);
-		return -1;
+		return tcpp_perror("Failed to connect to server");
 	}
 
 	printf("Connected to server %s.\n", name);
 	return 0;
 }
 
-void tcp_CloseClient() {
+int tcp_WriteToServer(char * msg) {
+	if (tcpp_cliSockDesc < 0) {
+		return tcpp_error("Not connected to a server. Connect first.");
+	}
+	if (strlen(msg) == 0) return tcpp_error("Message mustn't be empty");
+	int n = write(tcpp_cliSockDesc, msg, strlen(msg) * sizeof(char));
+	if (n < 0) {
+		return tcpp_perror("Failed to write to server");
+	}
+	else if (n < strlen(msg) * sizeof(char)) {
+		char * temp = (char *) malloc(256 * sizeof(char));
+		sprintf(temp, "Lost %d bytes when writting to server", strlen(msg) * sizeof(char) - n);
+		tcpp_error(temp);
+		free(temp);
+		return -1;
+	}
+
+	if (tcpp_logLev) printf("CLIENT: %s\n", msg);
+	return 0;
+}
+
+int tcp_ReadFromServer(char * msg, int count) {
+	if (count <= 0) return tcpp_error("'count' must be greater than 0");
+	if (tcpp_cliSockDesc < 0) return tcpp_error("Not connected to a server. Connect first.");
+	int n = read(tcpp_cliSockDesc, msg, count * sizeof(char));
+	if (n < 0) {
+		return tcpp_perror("Failed to read from server");
+	}
+	else if (n == 0){
+		return tcpp_error("Nothing read from server");
+	}
+	msg[n / sizeof(char)] = '\0';
+
+	if (tcpp_logLev) printf("SERVER: %s\n", msg);
+	return 0;
+}
+
+int tcp_CloseClient() {
 	if (tcpp_cliSockDesc >= 0) {
-		close(tcpp_cliSockDesc);
+		if (close(tcpp_cliSockDesc) < 0) {
+			return tcpp_perror("Failed to close descriptor");
+		}
 		tcpp_cliSockDesc = -1;
+	}
+	return 0;
+}
+
+void tcp_SetLogLevel(int level){
+	if (level <= 0) {
+		tcpp_logLev = 0;
+	}
+	else if (level >= 2) {
+		tcpp_logLev = 2;
+	}
+	else {
+		tcpp_logLev = 1;
 	}
 }
 
