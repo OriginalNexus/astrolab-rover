@@ -116,38 +116,36 @@ int tcp_ConnectToClient(int port) {
 	return 0;
 }
 
-int tcp_WriteToClient(char * msg) {
+int tcp_WriteToClient(void * data, unsigned int count, char * logMsg) {
 	if (tcpp_servSockDescNew < 0) {
 		return tcpp_error("Not connected to a client. Connect first.");
 	}
-	if (strlen(msg) == 0) return tcpp_error("Message mustn't be empty");
-	int n = write(tcpp_servSockDescNew, msg, strlen(msg) * sizeof(char));
+	if (count <= 0) return tcpp_error("'count' must be > 0");
+	int n = write(tcpp_servSockDescNew, data, count);
 	if (n < 0) {
 		return tcpp_perror("Failed to write to client");
 	}
-	else if (n < strlen(msg) * sizeof(char)) {
+	else if (n < count) {
 		char * temp = (char *) malloc(256 * sizeof(char));
-		sprintf(temp, "Lost %d bytes when writting to client", strlen(msg) * sizeof(char) - n);
+		sprintf(temp, "Lost %d bytes when writting to client", count - n);
 		tcpp_error(temp);
 		free(temp);
 		return -1;
 	}
-	if (tcpp_logLev) printf("SERVER: %s\n", msg);
+	if (tcpp_logLev && logMsg != NULL) printf("SERVER: %s\n", logMsg);
 	return 0;
 }
 
-int tcp_ReadFromClient(char * msg, int count) {
-	if (count <= 0) return tcpp_error("'count' must be greater than 0");
+int tcp_ReadFromClient(void * data, unsigned int count) {
+	if (count <= 0) return tcpp_error("'count' must be > 0");
 	if (tcpp_servSockDescNew < 0) return tcpp_error("Not connected to a client. Connect first.");
-	int n = read(tcpp_servSockDescNew, msg, count * sizeof(char));
+	int n = read(tcpp_servSockDescNew, data, count);
 	if (n < 0) {
 		return tcpp_perror("Failed to read from client");
 	}
 	else if (n == 0){
 		return tcpp_error("Nothing read from client");
 	}
-	msg[n / sizeof(char)] = '\0';
-	if (tcpp_logLev) printf("CLIENT: %s\n", msg);
 	return 0;
 }
 
@@ -199,40 +197,35 @@ int tcp_ConnectToServer(char * name, int port) {
 	return 0;
 }
 
-int tcp_WriteToServer(char * msg) {
+int tcp_WriteToServer(void * data, unsigned int count) {
 	if (tcpp_cliSockDesc < 0) {
 		return tcpp_error("Not connected to a server. Connect first.");
 	}
-	if (strlen(msg) == 0) return tcpp_error("Message mustn't be empty");
-	int n = write(tcpp_cliSockDesc, msg, strlen(msg) * sizeof(char));
+	if (count <= 0) return tcpp_error("'count' must be > 0");
+	int n = write(tcpp_cliSockDesc, data, count);
 	if (n < 0) {
 		return tcpp_perror("Failed to write to server");
 	}
-	else if (n < strlen(msg) * sizeof(char)) {
+	else if (n < count) {
 		char * temp = (char *) malloc(256 * sizeof(char));
-		sprintf(temp, "Lost %d bytes when writting to server", strlen(msg) * sizeof(char) - n);
+		sprintf(temp, "Lost %d bytes when writting to server", count - n);
 		tcpp_error(temp);
 		free(temp);
 		return -1;
 	}
-
-	if (tcpp_logLev) printf("CLIENT: %s\n", msg);
 	return 0;
 }
 
-int tcp_ReadFromServer(char * msg, int count) {
-	if (count <= 0) return tcpp_error("'count' must be greater than 0");
+int tcp_ReadFromServer(void * data, unsigned int count) {
+	if (count <= 0) return tcpp_error("'count' must be > 0");
 	if (tcpp_cliSockDesc < 0) return tcpp_error("Not connected to a server. Connect first.");
-	int n = read(tcpp_cliSockDesc, msg, count * sizeof(char));
+	int n = read(tcpp_cliSockDesc, data, count);
 	if (n < 0) {
 		return tcpp_perror("Failed to read from server");
 	}
 	else if (n == 0){
 		return tcpp_error("Nothing read from server");
 	}
-	msg[n / sizeof(char)] = '\0';
-
-	if (tcpp_logLev) printf("SERVER: %s\n", msg);
 	return 0;
 }
 
