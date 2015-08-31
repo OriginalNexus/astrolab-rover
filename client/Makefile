@@ -1,10 +1,14 @@
 buildrun:
 	mkdir -p bin/
-	gcc -g -lm -Wall -o bin/client.out client.c
-	sudo ./bin/client.out
+	gcc -g -lm -lncurses -Wall -o bin/client.out client.c
+	./bin/client.out
+
+build:
+	mkdir -p bin/
+	gcc -g -lm -lncurses -Wall -o bin/client.out client.c
 
 run:
-	sudo ./bin/client.out
+	./bin/client.out
 
 clean:
 	rm -r -f bin/

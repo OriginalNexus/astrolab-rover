@@ -1,7 +1,11 @@
 buildrun:
 	mkdir -p bin/
-	gcc -g -lwiringPi -lm -Wall -o bin/server.out server.c
+	gcc -g -lwiringPi -lncurses -lm -Wall -o bin/server.out server.c
 	sudo ./bin/server.out
+
+build:
+	mkdir -p bin/
+	gcc -g -lwiringPi -lncurses -lm -Wall -o bin/server.out server.c
 
 run:
 	sudo ./bin/server.out
