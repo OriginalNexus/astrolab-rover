@@ -1,11 +1,11 @@
 buildrun:
 	mkdir -p bin/
-	gcc -g -lm -lncurses -Wall -o bin/client.out client.c
+	gcc -g -o bin/client.out -lm -lncurses -Wall client.c
 	./bin/client.out
 
 build:
 	mkdir -p bin/
-	gcc -g -lm -lncurses -Wall -o bin/client.out client.c
+	gcc -g -o bin/client.out -lm -lncurses -Wall client.c
 
 run:
 	./bin/client.out
