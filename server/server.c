@@ -7,6 +7,8 @@
 #include <ncurses.h>
 #include <errno.h>
 
+#include <wiringPi.h>
+
 #define TCP_NCURSES
 #define TCP_IMPLEMENTATION
 #include "../shared/tcp.h"
@@ -30,7 +32,6 @@ void m_perror(char * msg);
 void m_error(char * msg);
 void init(void);
 void finish(int sig);
-void testMotors(void);
 
 
 void m_perror(char * msg) {
@@ -72,6 +73,9 @@ void init(void) {
 	nonl();
 	keypad(stdscr, TRUE);
 
+	// Setup wiring pi (used by drive.h)
+	wiringPiSetup();
+
 	// Set TCP log level
 	tcp_SetLogLevel(2);
 
@@ -91,23 +95,6 @@ void finish(int sig) {
 	tcp_CloseServer();
 	endwin();
 	exit(0);
-}
-
-void testMotors(void) {
-	printw("Testing motors...\n");
-	printw("Forward\n"); refresh();
-	drv_Forward(2048);
-	getch();
-
-	drv_Forward(0);
-	sleep(1);
-
-	printw("Backward\n"); refresh();
-	drv_Backward(2048);
-	getch();
-
-	drv_Forward(0);
-	printw("Done.\n");refresh();
 }
 
 int main(int argc, char * argv[]) {
@@ -152,18 +139,18 @@ int main(int argc, char * argv[]) {
 				servPack = pck_NewServerPck(0);
 				reset = 1;
 				break;
-			case CMD_FORWARD:
-				servPack = pck_NewServerPck(drv_Forward(cliPack.data));
-				break;
-			case CMD_BACKWARD:
-				servPack = pck_NewServerPck(drv_Backward(cliPack.data));
-				break;
-			case CMD_LEFT:
-				servPack = pck_NewServerPck(drv_Left(cliPack.data));
-				break;
-			case CMD_RIGHT:
-				servPack = pck_NewServerPck(drv_Right(cliPack.data));
-				break;
+			// case CMD_FORWARD:
+			// 	servPack = pck_NewServerPck(drv_Forward(cliPack.data));
+			// 	break;
+			// case CMD_BACKWARD:
+			// 	servPack = pck_NewServerPck(drv_Backward(cliPack.data));
+			// 	break;
+			// case CMD_LEFT:
+			// 	servPack = pck_NewServerPck(drv_Left(cliPack.data));
+			// 	break;
+			// case CMD_RIGHT:
+			// 	servPack = pck_NewServerPck(drv_Right(cliPack.data));
+			// 	break;
 			case CMD_CLAW:
 				servPack = pck_NewServerPck(drv_Claw(cliPack.data));
 				break;
@@ -172,6 +159,15 @@ int main(int argc, char * argv[]) {
 				break;
 			case CMD_STEP_RELEASE:
 				servPack = pck_NewServerPck(drv_Step_Release());
+				break;
+			case CMD_SENSOR:
+				servPack = pck_NewServerPck(sen_GetSensorVal(cliPack.data));
+				break;
+			case CMD_SET_MOTOR_L:
+				servPack = pck_NewServerPck(drv_SetMotor(DRV_L_NUM, cliPack.data));
+				break;
+			case CMD_SET_MOTOR_R:
+				servPack = pck_NewServerPck(drv_SetMotor(DRV_R_NUM, cliPack.data));
 				break;
 			default:
 				servPack = pck_NewServerPck(-1);

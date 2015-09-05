@@ -1,13 +1,16 @@
 #ifndef PACK_HEADER
 #define PACK_HEADER
 
-#define CMD_FORWARD         1
-#define CMD_BACKWARD        2
-#define CMD_LEFT            3
-#define CMD_RIGHT           4
+// #define CMD_FORWARD         1
+// #define CMD_BACKWARD        2
+// #define CMD_LEFT            3
+// #define CMD_RIGHT           4
+#define CMD_SET_MOTOR_L     1
+#define CMD_SET_MOTOR_R     2
 #define CMD_CLAW            5
 #define CMD_STEP_STEP       6
 #define CMD_STEP_RELEASE    7
+#define CMD_SENSOR			8
 #define CMD_DISCONNECT      99
 #define CMD_EXIT            999
 

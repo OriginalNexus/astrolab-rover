@@ -12,26 +12,25 @@
 #define PACK_IMPLEMENTATION
 #include "../shared/package.h"
 
-#define MAX_UP 10
 #define MAX_LEFT 10
+#define MAX_RIGHT 10
 
 // Port used
 int port = 0;
+int isConnected = 0;
 
-int forward = 0;
 int left = 0;
+int right = 0;
 int claw = 0;
 int stepAngle = 0;
 int stepOldAngle = 0;
 
 
-int isConnected = 0;
-
 void m_perror(char * msg);
 void m_error(char * msg);
 void init(void);
 void finish(int sig);
-void connectToServer(void);
+int connectToServer(void);
 int sendCmd(int cmd, int data);
 
 
@@ -52,6 +51,21 @@ void m_error(char * msg) {
 }
 
 void init(void) {
+	// Handle SIGTERM and SIGINT
+	struct sigaction sigAction;
+	memset (&sigAction, '\0', sizeof(sigAction));
+	sigAction.sa_handler = finish;
+	if (sigaction(SIGTERM, &sigAction, NULL) < 0)
+		m_perror("Function sigaction(SIGTERM) failed");
+	if (sigaction(SIGINT, &sigAction, NULL) < 0)
+		m_perror("Function sigaction(SIGINT) failed");
+	// Ignore SIGPIPE
+	struct sigaction sig_ign;
+	memset (&sig_ign, '\0', sizeof(sig_ign));
+	sig_ign.sa_handler = SIG_IGN;
+	if (sigaction(SIGPIPE, &sig_ign, NULL) < 0)
+		m_perror("Function sigaction(SIGPIPE) failed");
+
 	// Initialize ncurses
 	initscr();
 	cbreak();
@@ -70,21 +84,6 @@ void init(void) {
 		m_error("Failed to read port from file ../shared/port");
 	}
 	fclose(fp);
-
-	// Handle SIGTERM and SIGINT
-	struct sigaction sigAction;
-	memset (&sigAction, '\0', sizeof(sigAction));
-	sigAction.sa_handler = finish;
-	if (sigaction(SIGTERM, &sigAction, NULL) < 0)
-		m_perror("Function sigaction(SIGTERM) failed");
-	if (sigaction(SIGINT, &sigAction, NULL) < 0)
-		m_perror("Function sigaction(SIGINT) failed");
-	// Ignore SIGPIPE
-	struct sigaction sig_ign;
-	memset (&sig_ign, '\0', sizeof(sig_ign));
-	sig_ign.sa_handler = SIG_IGN;
-	if (sigaction(SIGPIPE, &sig_ign, NULL) < 0)
-		m_perror("Function sigaction(SIGPIPE) failed");
 }
 
 void finish(int sig) {
@@ -96,40 +95,26 @@ void finish(int sig) {
 	exit(0);
 }
 
-void connectToServer(void) {
+int connectToServer(void) {
 	if (isConnected) tcp_CloseClient();
 	isConnected = 0;
 	char * hostName = (char *) malloc(32 * sizeof(char));
-	int ch;
-	nocbreak();
-	echo();
 	while (1) {
+		echo();
+		nocbreak();
 		printw("Enter server name: "); refresh();
 		scanw("%31s", hostName);
+		cbreak();
+		noecho();
+		if (strcmp(hostName, "exit") == 0) break;
 		if (!tcp_ConnectToServer(hostName, port)) {
-			cbreak();
-			noecho();
 			isConnected = 1;
 			break;
 		}
-		printw("Try to start server and connect? (y / n): "); refresh();
-		char * p = (char *) malloc(256 * sizeof(char));
-		ch = getch(); getstr(p); free(p);
-		if (ch == 'y') {
-			char * cmd = (char *) malloc(256 * sizeof(char));
-			snprintf(cmd, 256, "ssh -n -f nexus@%s \"sh -c 'cd ~/github/astrolab-rover/server/; nohup ./bin/server.out > /dev/null 2> /dev/null < /dev/null &'\"", hostName);
-			system(cmd);
-			free(cmd);
-			if (!tcp_ConnectToServer(hostName, port)) {
-				cbreak();
-				noecho();
-				isConnected = 1;
-				break;
-			}
-			printw("Failed. Try again\n"); refresh();
-		}
 	}
 	free(hostName);
+	if (!isConnected) return -1;
+	return 0;
 }
 
 int sendCmd(int cmd, int data) {
@@ -144,7 +129,7 @@ int sendCmd(int cmd, int data) {
 		connectToServer();
 		return -1;
 	}
-	if (servPack.return_val < 0) printw("Command failed!\n");
+	//if (servPack.return_val < 0) printw("Command failed!\n");
 	return servPack.return_val;
 }
 
@@ -155,62 +140,53 @@ int main(int argc, char * argv[]) {
 	printw("======== AstroLab Rover Client ========\n");
 	printw("=======================================\n");
 
-	move(8, 0);
+	move(17, 0);
 
-	connectToServer();
+	if (connectToServer()) finish(0);
 
 	int run = 1;
-	int ch, x, y;
-	int fwSpeed, lfSpeed;
+	int ch, x, y, i;
 	while (run) {
 		// Print speed
 		getyx(stdscr, y, x);
 
 		move(3, 0); clrtoeol();
-		mvprintw(3, 0, "Forward Speed: %d\n", forward);
-
+		printw("| L    | R    | Arm  | Claw |\n");
 		clrtoeol();
-		if (left > 0) printw("Left Speed: %d\n", left);
-		if (left < 0) printw("Right Speed: %d\n", -left);
-
-		move (5, 0); clrtoeol();
-		printw("Claw angle: %d\n", claw);
-
-		clrtoeol();
-		printw("Arm angle: %d\n", stepAngle);
+		mvprintw(4, 0, "| %d", left);
+		mvprintw(4, 7, "| %d", right);
+		mvprintw(4, 14, "| %d", stepAngle);
+		mvprintw(4, 21, "| %d", claw);
+		mvprintw(4, 28, "|\n\n");
 
 		move(y, x);
 		refresh();
 
 		ch = getch();
 		switch (ch) {
-			case KEY_UP:
-				if (forward < MAX_UP) forward++;
-				break;
-			case KEY_DOWN:
-				if (forward > -MAX_UP) forward--;
-				break;
-			case KEY_LEFT:
+			case '7':
 				if (left < MAX_LEFT) left++;
 				break;
-			case KEY_RIGHT:
+			case '1':
 				if (left > -MAX_LEFT) left--;
 				break;
-			case 'd':
-			case 'D':
+			case '9':
+				if (right < MAX_RIGHT) right++;
+				break;
+			case '3':
+				if (right > -MAX_RIGHT) right--;
+				break;
+			case '6':
 				if (claw < 90) claw += 5;
 				break;
-			case 'a':
-			case 'A':
+			case '4':
 				if (claw > 0) claw -= 5;
 				break;
-			case 'w':
-			case 'W':
-				if (stepAngle < 270) stepAngle += 9;
+			case '8':
+				if (stepAngle < 3600) stepAngle += 9;
 				break;
-			case 's':
-			case 'S':
-				if (stepAngle > 0) stepAngle -= 9;
+			case '2':
+				if (stepAngle > -3600) stepAngle -= 9;
 				break;
 			case KEY_F(7):
 				run = 0;
@@ -226,39 +202,51 @@ int main(int argc, char * argv[]) {
 				break;
 		}
 		switch (ch) {
-			case KEY_UP:
-			case KEY_DOWN:
-			case KEY_LEFT:
-			case KEY_RIGHT:
-				fwSpeed = ((double)forward / MAX_UP) * (1 << 12);
-				lfSpeed = ((double)left / MAX_LEFT) * (1 << 12);
-
-				if (left == 0) {
-					if (forward > 0) sendCmd(CMD_FORWARD, fwSpeed);
-					else if (forward < 0) sendCmd(CMD_BACKWARD, -fwSpeed);
-					else sendCmd(CMD_FORWARD, 0);
-				}
-				else if (left > 0) sendCmd(CMD_LEFT, lfSpeed);
-				else if (left < 0) sendCmd(CMD_RIGHT, -lfSpeed);
+			case '7':
+			case '1':
+				sendCmd(CMD_SET_MOTOR_L, ((double)left / MAX_LEFT) * (1 << 12));
 				break;
-			case 'd':
-			case 'D':
-			case 'a':
-			case 'A':
+			case '9':
+			case '3':
+				sendCmd(CMD_SET_MOTOR_R, ((double)right / MAX_RIGHT) * (1 << 12));
+				break;
+			case '4':
+			case '6':
 				sendCmd(CMD_CLAW, claw);
 				break;
-			case 'w':
-			case 'W':
-			case 's':
-			case 'S':
+			case '8':
+			case '2':
 				if (stepAngle - stepOldAngle) {
 					sendCmd(CMD_STEP_STEP, (stepAngle - stepOldAngle) / 0.9);
 					stepOldAngle = stepAngle;
-					if (stepAngle == 0)
-						sendCmd(CMD_STEP_RELEASE, 0);
 				}
 				break;
+			case '5':
+				sendCmd(CMD_SET_MOTOR_L, 0);
+				sendCmd(CMD_SET_MOTOR_R, 0);
+				sendCmd(CMD_STEP_RELEASE, 0);
+				sendCmd(CMD_SET_MOTOR_L, 0);
+				left = right = claw = stepAngle = stepOldAngle = 0;
+				break;
+			case '0':
+				getyx(stdscr, y, x);
+
+				move(6, 0); clrtoeol();
+				// Get sensors
+				for (i = 0; i < 8; i++) {
+					clrtoeol();
+					printw("Sensor %d: %d\n", i + 1, sendCmd(CMD_SENSOR, i));
+				}
+				clrtoeol();
+				printw("Temperature: %f\n", sendCmd(CMD_SENSOR, 8) / 1000.0);
+				clrtoeol();
+				printw("Pressure: %d\n", sendCmd(CMD_SENSOR, 9));
+
+				move(y, x);
+				refresh();
+				break;
 		}
+
 	}
 
 	finish(0);

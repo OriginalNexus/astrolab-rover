@@ -418,9 +418,10 @@ int mc_Step_OneStep(int motNum, int dir, int style) {
             pins_state |= 1 << (curStep / MC_MICROSTEPS);
     }
 
-    //printw("%d %d    %d %d %d %d\n", pwm1, pwm2, (pins_state & (1 << 0)) || (pins_state & (1 << 4)), pins_state & (1 << 1), pins_state & (1 << 2), pins_state & (1 << 3)); refresh();
-
     if ((pins_state & (1 << 0)) || (pins_state & (1 << 4))) {
+        if (!(pins_state & (1 << 3)))
+            if (mcp_setPin(mcp_steppers[motNum].pin3, 0))
+                return mcp_error("mc_Step_OneStep: Failed to set coil 2 pin 1");
         if (mcp_setPin(mcp_steppers[motNum].pin1, 1))
             return mcp_error("mc_Step_OneStep: Failed to set coil 1 pin 1");
     }
