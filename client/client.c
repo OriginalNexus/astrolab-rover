@@ -4,6 +4,7 @@
 #include <signal.h>
 #include <string.h>
 #include <errno.h>
+#include <math.h>
 #include <ncurses.h>
 
 #define TCP_NCURSES
@@ -24,6 +25,33 @@ int right = 0;
 int claw = 0;
 int stepAngle = 0;
 int stepOldAngle = 0;
+
+// Sensor functions
+int (* senFunc[8])(char *, int, int);
+int senFunc1(char * s, int n, int a) {
+	return snprintf(s, n, "None: %d", a);
+}
+int senFunc2(char * s, int n, int a) {
+	return snprintf(s, n, "Light: %d", a);
+}
+int senFunc3(char * s, int n, int a) {
+	return snprintf(s, n, "None: %d", a);
+}
+int senFunc4(char * s, int n, int a) {
+	return snprintf(s, n, "Force: %lf grams", 9.29319 * exp(0.6222 * a * 0.00488));
+}
+int senFunc5(char * s, int n, int a) {
+	return snprintf(s, n, "Humidity: %lf%% ", a * 100 / 1023.0);
+}
+int senFunc6(char * s, int n, int a) {
+	return snprintf(s, n, "CO: %lf ppm", 0.282806 * exp(1.62986 * a * 0.00488));
+}
+int senFunc7(char * s, int n, int a) {
+	return snprintf(s, n, "H2: %lf ppm", 0.387551 * exp(2.48982 * a * 0.00488));
+}
+int senFunc8(char * s, int n, int a) {
+	return snprintf(s, n, "CH4: %lf ppm", 4.0371 * exp(2.06903 * a * 0.00488));
+}
 
 
 void m_perror(char * msg);
@@ -65,6 +93,10 @@ void init(void) {
 	sig_ign.sa_handler = SIG_IGN;
 	if (sigaction(SIGPIPE, &sig_ign, NULL) < 0)
 		m_perror("Function sigaction(SIGPIPE) failed");
+
+	// Set up sensor functions
+	senFunc[0] = senFunc1; senFunc[1] = senFunc2; senFunc[2] = senFunc3; senFunc[3] = senFunc4;
+	senFunc[4] = senFunc5; senFunc[5] = senFunc6; senFunc[6] = senFunc7; senFunc[7] = senFunc8;
 
 	// Initialize ncurses
 	initscr();
@@ -233,14 +265,18 @@ int main(int argc, char * argv[]) {
 
 				move(6, 0); clrtoeol();
 				// Get sensors
+				int maxLength = 40; maxLength++;
+				char * s = (char *)malloc(maxLength * sizeof(char));
 				for (i = 0; i < 8; i++) {
 					clrtoeol();
-					printw("Sensor %d: %d\n", i + 1, sendCmd(CMD_SENSOR, i));
+					if ((*senFunc[i])(s, maxLength, sendCmd(CMD_SENSOR, i)) < 0) strcpy(s, "Error");
+					printw("%s\n", s);
 				}
+				free(s);
 				clrtoeol();
-				printw("Temperature: %f\n", sendCmd(CMD_SENSOR, 8) / 1000.0);
+				printw("Temperature: %.3f C\n", sendCmd(CMD_SENSOR, 8) / 1000.0);
 				clrtoeol();
-				printw("Pressure: %d\n", sendCmd(CMD_SENSOR, 9));
+				printw("Pressure: %d Pa\n", sendCmd(CMD_SENSOR, 9));
 
 				move(y, x);
 				refresh();
